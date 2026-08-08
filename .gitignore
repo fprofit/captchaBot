@@ -1,0 +1,11 @@
+.vscode/
+*.DS_Store
+
+*.env
+*.yaml
+
+
+*.exe
+*.out
+*.test
+__debug_bin*
