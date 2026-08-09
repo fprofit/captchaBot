@@ -34,6 +34,11 @@ func Load() (Config, error) {
 			err,
 		)
 	}
+	if pollTimeout < 0 {
+		return Config{}, fmt.Errorf(
+			"POLL_TIMEOUT must be greater than zero",
+		)
+	}
 
 	captchaTimeout, err := strconv.Atoi(os.Getenv("CAPTCHA_TIMEOUT"))
 	if err != nil {
@@ -41,6 +46,9 @@ func Load() (Config, error) {
 			"invalid CAPTCHA_TIMEOUT: %w",
 			err,
 		)
+	}
+	if captchaTimeout <= 0 {
+		captchaTimeout = 300
 	}
 
 	debug := true
