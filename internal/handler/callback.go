@@ -22,7 +22,7 @@ func (h *Handler) handleCallback(callback *telegram.CallbackQuery) {
 
 	switch result {
 	case 1:
-		text = "✅ CAPTCHA пройдена!\nПравила: уважайте других участников и соблюдайте правила группы."
+		text = "Добро пожаловать! 🎉\n\nБудьте вежливы 🤝\nНе спамьте 🚫\nУважайте участников."
 		showAlert = true
 
 		h.logger.Infof("CAPTCHA passed: user_id=%d chat_id=%d message_id=%d",
