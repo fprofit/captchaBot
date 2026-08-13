@@ -2,10 +2,20 @@ package handler
 
 import (
 	"fmt"
+	"html"
 
 	"github.com/fprofit/telegram-captcha-bot/internal/captcha"
 	"github.com/fprofit/telegram-captcha-bot/internal/telegram"
 )
+
+func formatCaptchaCaption(user telegram.User) string {
+	return fmt.Sprintf(
+		"Привет, <a href=\"tg://user?id=%d\">%s %s</a>! 👋\n\nКто не решил - тот бот 🤖",
+		user.ID,
+		html.EscapeString(user.FirstName),
+		html.EscapeString(user.LastName),
+	)
+}
 
 func (h *Handler) handleNewChatMembers(message *telegram.Message) {
 	chatID := message.Chat.ID
@@ -28,84 +38,20 @@ func (h *Handler) handleNewChatMembers(message *telegram.Message) {
 
 		h.logger.Info("user restricted until CAPTCHA completion", "user_id", userID, "chat_id", chatID)
 
-		answers, err := h.captcha.Generator.Generate(4)
-		h.logger.Error("failed to restrict new member", "err", err, "user_id", userID, "chat_id", chatID)
+		g, k := h.generateCaptcha()
 
-		h.logger.Debug("CAPTCHA challenge generated", "user_id", userID, "chat_id", chatID, "answers", len(answers.Options))
-
-		if len(answers.Options) == 0 {
-			h.logger.Error("failed to generate CAPTCHA answers", "user_id", userID, "chat_id", chatID)
-			continue
-		}
-
-		buttons := make(
-			[]telegram.InlineKeyboardButton,
-			0,
-			len(answers.Options),
-		)
-
-		for _, answer := range answers.Options {
-			buttons = append(
-				buttons,
-				telegram.InlineKeyboardButton{
-					Text:         answer.Text,
-					CallbackData: answer.Token,
-				},
-			)
-		}
-
-		keyboard := &telegram.InlineKeyboardMarkup{
-			InlineKeyboard: [][]telegram.InlineKeyboardButton{
-				buttons,
-			},
-		}
-
-		h.logger.Debug("CAPTCHA keyboard created",
-			"user_id", userID,
-			"chat_id", chatID,
-			"buttons", len(buttons),
-		)
-
-		sentMessage, err := h.client.SendCaptchaMessageImg(chatID,
-			fmt.Sprintf("Привет, <a href=\"tg://user?id=%d\">%s %s</a>!\n",
-				userID,
-				user.FirstName,
-				user.LastName,
-			),
-			answers.Image,
-			keyboard,
-		)
+		sentMessage, err := h.client.SendCaptchaMessageImg(chatID, formatCaptchaCaption(user), g.Image, k)
 		if err != nil {
-			h.logger.Error("failed to send CAPTCHA message",
-				"err", err,
-				"user_id", userID,
-				"chat_id", chatID,
-			)
+			h.logger.Error("failed to send CAPTCHA message", "err", err, "user_id", userID, "chat_id", chatID)
 
 			continue
 		}
 
-		h.logger.Debug(
-			"CAPTCHA message sent",
-			"user_id", userID,
-			"chat_id", chatID,
-			"message_id", sentMessage.MessageID,
-		)
+		h.logger.Debug("CAPTCHA message sent", "user_id", userID, "chat_id", chatID, "message_id", sentMessage.MessageID)
 
-		h.captcha.Create(
-			captcha.ChallengeKey{
-				ChatID:    chatID,
-				MessageID: sentMessage.MessageID,
-			},
-			userID,
-			answers,
-		)
+		h.captcha.Create(captcha.ChallengeKey{ChatID: chatID, MessageID: sentMessage.MessageID}, userID, g)
 
-		h.logger.Info("CAPTCHA created",
-			"user_id", userID,
-			"chat_id", chatID,
-			"message_id", sentMessage.MessageID,
-		)
+		h.logger.Info("CAPTCHA created", "user_id", userID, "chat_id", chatID, "message_id", sentMessage.MessageID)
 	}
 }
 

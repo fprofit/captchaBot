@@ -27,14 +27,15 @@ type Message struct {
 	MessageID      int64  `json:"message_id"`
 	From           *User  `json:"from,omitempty"`
 	Chat           Chat   `json:"chat"`
+	Caption        string `json:"caption"`
 	NewChatMembers []User `json:"new_chat_members,omitempty"`
 	LeftChatMember *User  `json:"left_chat_member,omitempty"`
 }
-
 type Chat struct {
-	ID    int64  `json:"id"`
-	Type  string `json:"type"`
-	Title string `json:"title,omitempty"`
+	ID       int64  `json:"id"`
+	Type     string `json:"type"`
+	Title    string `json:"title,omitempty"`
+	Username string `json:"username,omitempty"`
 }
 
 type InlineKeyboardMarkup struct {

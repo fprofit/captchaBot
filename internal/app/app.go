@@ -31,11 +31,7 @@ func Run(cfg config.Config, logger *slog.Logger) {
 		return
 	}
 
-	logger.Info(
-		"bot started",
-		"username", bot.Username,
-		"id", bot.ID,
-	)
+	logger.Info("bot started", "username", bot.Username, "id", bot.ID)
 
 	ctx, stop := signal.NotifyContext(
 		context.Background(),
@@ -55,6 +51,7 @@ func Run(cfg config.Config, logger *slog.Logger) {
 
 	handler := handler.NewHandler(
 		client,
+		cfg.AdminUserID,
 		logger,
 		captchaManager,
 	)

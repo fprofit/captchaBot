@@ -13,8 +13,8 @@ type Config struct {
 	BotToken       string
 	PollTimeout    int
 	CaptchaTimeout int
-	// Debug          bool
-	LogLevel string
+	AdminUserID    int64
+	LogLevel       string
 }
 
 func Load() (Config, error) {
@@ -25,6 +25,11 @@ func Load() (Config, error) {
 	token := os.Getenv("BOT_TOKEN")
 	if token == "" {
 		return Config{}, fmt.Errorf("BOT_TOKEN is not set")
+	}
+
+	adminUserID, err := strconv.ParseInt(os.Getenv("ADMIN_USER_ID"), 10, 64)
+	if err != nil || adminUserID == 0 {
+		adminUserID = -1
 	}
 
 	pollTimeout, err := strconv.Atoi(os.Getenv("POLL_TIMEOUT"))
@@ -51,26 +56,18 @@ func Load() (Config, error) {
 		captchaTimeout = 300
 	}
 
-	// debug := true
-	// if value := os.Getenv("DEBUG"); value != "" {
-	// 	parsed, err := strconv.ParseBool(value)
-	// 	if err == nil {
-	// 		debug = parsed
-	// 	}
-	// }
-
-	logLevel := strings.ToUpper(os.Getenv("LOG_LEVEL"))
+	logLevel := strings.ToLower(os.Getenv("LOG_LEVEL"))
 
 	switch logLevel {
-	case "DEBUG", "INFO", "WARN", "ERROR":
+	case "debug", "info", "warn", "error":
 	default:
-		logLevel = "INFO"
+		logLevel = "info"
 	}
 	return Config{
 		BotToken:       token,
+		AdminUserID:    adminUserID,
 		PollTimeout:    pollTimeout,
 		CaptchaTimeout: captchaTimeout,
-		// Debug:          debug,
-		LogLevel: logLevel,
+		LogLevel:       logLevel,
 	}, nil
 }

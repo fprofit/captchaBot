@@ -29,6 +29,10 @@ const (
 	CheckForeignUser
 	CheckExpired
 	CheckRetry
+	CheckMaxAttempts
 )
 
-const MaxAttempts = 2
+const (
+	MaxAttempts     = 2
+	KickMaxAttempts = 5
+)
