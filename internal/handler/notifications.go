@@ -41,3 +41,20 @@ func formatUsername(username string) string {
 
 	return "@" + html.EscapeString(username)
 }
+
+func (h *Handler) notificationRemovedExpired(chatID, userID int64) {
+	if h.adminUserID == -1 {
+		return
+	}
+	message := fmt.Sprintf(
+		"👤 <b>Пользователь</b>\n"+
+			"ID: <code>%d</code>\n\n"+
+			"💬 <b>Чат</b>\n"+
+			"ID: <code>%d</code>\n\n"+
+			"%s",
+		userID,
+		chatID,
+		"Время вышло",
+	)
+	h.client.SendMessage(h.adminUserID, message)
+}
