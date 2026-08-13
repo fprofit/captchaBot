@@ -2,62 +2,54 @@ package handler
 
 import (
 	"fmt"
-	"math/rand/v2"
 
+	"github.com/fprofit/telegram-captcha-bot/internal/captcha"
 	"github.com/fprofit/telegram-captcha-bot/internal/telegram"
 )
 
 func (h *Handler) handleNewChatMembers(message *telegram.Message) {
+	chatID := message.Chat.ID
+
 	for _, user := range message.NewChatMembers {
-		chatID := message.Chat.ID
 		userID := user.ID
 
-		h.logger.Infof("new member: user_id=%d username=@%s chat_id=%d",
-			userID, user.Username, chatID,
-		)
+		h.logger.Info("new member joined", "user_id", userID, "username", user.Username, "chat_id", chatID)
 
 		if err := h.client.DeleteMessage(chatID, message.MessageID); err != nil {
-			h.logger.Errorf("failed to delete service message: chat_id=%d message_id=%d error=%v",
-				chatID, message.MessageID, err,
-			)
+			h.logger.Error("failed to delete service message", "err", err, "chat_id", chatID, "message_id", message.MessageID)
 		} else {
-			h.logger.Debugf("service message deleted: chat_id=%d message_id=%d",
-				chatID, message.MessageID,
-			)
+			h.logger.Debug("service message deleted", "chat_id", chatID, "message_id", message.MessageID)
 		}
 
 		if err := h.client.RestrictChatMember(chatID, userID); err != nil {
-			h.logger.Errorf("failed to restrict user: chat_id=%d user_id=%d error=%v",
-				chatID, userID, err,
-			)
+			h.logger.Error("failed to restrict new member", "err", err, "user_id", userID, "chat_id", chatID)
 			continue
 		}
 
-		h.logger.Infof("user restricted until CAPTCHA completion: chat_id=%d user_id=%d",
-			chatID, userID,
-		)
+		h.logger.Info("user restricted until CAPTCHA completion", "user_id", userID, "chat_id", chatID)
 
-		answers := h.captcha.CreateAnswers(chatID, message.MessageID, 4)
+		answers, err := h.captcha.Generator.Generate(4)
+		h.logger.Error("failed to restrict new member", "err", err, "user_id", userID, "chat_id", chatID)
 
-		h.logger.Debugf("CAPTCHA answers generated: user_id=%d chat_id=%d count=%d",
-			userID, chatID, len(answers),
-		)
+		h.logger.Debug("CAPTCHA challenge generated", "user_id", userID, "chat_id", chatID, "answers", len(answers.Options))
 
-		if len(answers) == 0 {
-			h.logger.Errorf("failed to create CAPTCHA answers: user_id=%d chat_id=%d",
-				userID, chatID,
-			)
+		if len(answers.Options) == 0 {
+			h.logger.Error("failed to generate CAPTCHA answers", "user_id", userID, "chat_id", chatID)
 			continue
 		}
 
-		buttons := make([]telegram.InlineKeyboardButton, 0, len(answers))
+		buttons := make(
+			[]telegram.InlineKeyboardButton,
+			0,
+			len(answers.Options),
+		)
 
-		for _, answer := range answers {
+		for _, answer := range answers.Options {
 			buttons = append(
 				buttons,
 				telegram.InlineKeyboardButton{
 					Text:         answer.Text,
-					CallbackData: answer.CallbackData,
+					CallbackData: answer.Token,
 				},
 			)
 		}
@@ -68,53 +60,61 @@ func (h *Handler) handleNewChatMembers(message *telegram.Message) {
 			},
 		}
 
-		correct := answers[rand.IntN(len(answers))]
-
-		h.logger.Debugf("CAPTCHA correct answer selected: user_id=%d chat_id=%d answer=%s",
-			userID, chatID, correct.Text,
+		h.logger.Debug("CAPTCHA keyboard created",
+			"user_id", userID,
+			"chat_id", chatID,
+			"buttons", len(buttons),
 		)
 
-		sentMessage, err := h.client.SendCaptchaMessage(
-			chatID,
-			fmt.Sprintf("Привет, <a href=\"tg://user?id=%d\">%s %s</a>!\nНажми на %s",
-				userID, user.FirstName, user.LastName, correct.Text,
+		sentMessage, err := h.client.SendCaptchaMessageImg(chatID,
+			fmt.Sprintf("Привет, <a href=\"tg://user?id=%d\">%s %s</a>!\n",
+				userID,
+				user.FirstName,
+				user.LastName,
 			),
+			answers.Image,
 			keyboard,
 		)
 		if err != nil {
-			h.logger.Errorf("failed to send CAPTCHA message: user_id=%d chat_id=%d error=%v",
-				userID, chatID, err,
+			h.logger.Error("failed to send CAPTCHA message",
+				"err", err,
+				"user_id", userID,
+				"chat_id", chatID,
 			)
+
 			continue
 		}
 
-		h.logger.Debugf("CAPTCHA message sent: user_id=%d chat_id=%d message_id=%d",
-			userID, chatID, sentMessage.MessageID,
+		h.logger.Debug(
+			"CAPTCHA message sent",
+			"user_id", userID,
+			"chat_id", chatID,
+			"message_id", sentMessage.MessageID,
 		)
 
-		h.captcha.Create(chatID, sentMessage.MessageID, userID, correct)
+		h.captcha.Create(
+			captcha.ChallengeKey{
+				ChatID:    chatID,
+				MessageID: sentMessage.MessageID,
+			},
+			userID,
+			answers,
+		)
 
-		h.logger.Infof("CAPTCHA created: user_id=%d chat_id=%d message_id=%d",
-			userID, chatID, sentMessage.MessageID,
+		h.logger.Info("CAPTCHA created",
+			"user_id", userID,
+			"chat_id", chatID,
+			"message_id", sentMessage.MessageID,
 		)
 	}
 }
 
 func (h *Handler) handleLeftChatMember(message *telegram.Message) {
 	user := message.LeftChatMember
-
-	h.logger.Infof("member left: user_id=%d chat_id=%d message_id=%d",
-		user.ID, message.Chat.ID, message.MessageID,
-	)
-
+	h.logger.Info("member left", "user_id", user.ID, "chat_id", message.Chat.ID, "message_id", message.MessageID)
 	if err := h.client.DeleteMessage(message.Chat.ID, message.MessageID); err != nil {
-		h.logger.Errorf("failed to delete leave message: chat_id=%d message_id=%d error=%v",
-			message.Chat.ID, message.MessageID, err,
-		)
+		h.logger.Error("failed to delete leave message", "err", err, "chat_id", message.Chat.ID, "message_id", message.MessageID)
 		return
 	}
-
-	h.logger.Infof("leave message deleted: chat_id=%d message_id=%d",
-		message.Chat.ID, message.MessageID,
-	)
+	h.logger.Debug("leave message deleted", "chat_id", message.Chat.ID, "message_id", message.MessageID)
 }

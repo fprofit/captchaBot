@@ -2,26 +2,20 @@ package app
 
 import (
 	"context"
-	stdlog "log"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/fprofit/telegram-captcha-bot/internal/captcha"
 	"github.com/fprofit/telegram-captcha-bot/internal/config"
 	"github.com/fprofit/telegram-captcha-bot/internal/handler"
-	appLog "github.com/fprofit/telegram-captcha-bot/internal/log"
 	"github.com/fprofit/telegram-captcha-bot/internal/telegram"
 )
 
-func Run(cfg config.Config) {
-	logger, err := appLog.New(cfg.Debug, cfg.LogLevel)
-	if err != nil {
-		stdlog.Fatal(err)
-	}
-	defer logger.Close()
-
-	logger.Infof("application starting")
+func Run(cfg config.Config, logger *slog.Logger) {
+	logger.Info("application starting")
 
 	client := telegram.NewClient(
 		cfg.BotToken,
@@ -29,15 +23,19 @@ func Run(cfg config.Config) {
 		logger,
 	)
 
-	logger.Infof("Telegram client initialized")
+	logger.Info("Telegram client initialized")
 
 	bot, err := client.GetMe()
 	if err != nil {
-		logger.Errorf("failed to initialize Telegram bot: %v", err)
+		logger.Error("failed to initialize Telegram bot", "err", err)
 		return
 	}
 
-	logger.Infof("bot started: @%s (id=%d)", bot.Username, bot.ID)
+	logger.Info(
+		"bot started",
+		"username", bot.Username,
+		"id", bot.ID,
+	)
 
 	ctx, stop := signal.NotifyContext(
 		context.Background(),
@@ -46,35 +44,38 @@ func Run(cfg config.Config) {
 	)
 	defer stop()
 
-	logger.Infof("signal handler initialized")
+	logger.Info("signal handler initialized")
 
-	captchaManager := captcha.NewManager(cfg.CaptchaTimeout, logger)
-
-	logger.Infof(
-		"CAPTCHA manager initialized: timeout=%s",
-		cfg.CaptchaTimeout,
+	captchaManager := captcha.NewManager(
+		time.Duration(cfg.CaptchaTimeout)*time.Second,
+		logger,
 	)
 
-	handler := handler.NewHandler(client, logger, captchaManager)
+	logger.Info("CAPTCHA manager initialized", "timeout", cfg.CaptchaTimeout)
 
-	logger.Infof("handler initialized")
+	handler := handler.NewHandler(
+		client,
+		logger,
+		captchaManager,
+	)
+
+	logger.Info("handler initialized")
 
 	go handler.StartCaptchaTimer(ctx)
 
-	logger.Infof("CAPTCHA timer started")
-
-	logger.Infof("starting Telegram polling")
+	logger.Info("CAPTCHA timer started")
+	logger.Info("starting Telegram polling")
 
 	err = client.Poll(ctx, handler.Handle)
 	if err != nil && ctx.Err() == nil {
-		logger.Errorf("polling stopped with error: %v", err)
+		logger.Error("polling stopped with error", "err", err)
 	}
 
-	logger.Infof("Telegram polling stopped")
+	logger.Info("Telegram polling stopped")
 
 	if ctx.Err() != nil {
-		logger.Infof("application stopped by signal")
+		logger.Info("application stopped by signal")
 	}
 
-	logger.Infof("application shutdown complete")
+	logger.Info("application shutdown complete")
 }

@@ -13,8 +13,8 @@ type Config struct {
 	BotToken       string
 	PollTimeout    int
 	CaptchaTimeout int
-	Debug          bool
-	LogLevel       string
+	// Debug          bool
+	LogLevel string
 }
 
 func Load() (Config, error) {
@@ -51,13 +51,13 @@ func Load() (Config, error) {
 		captchaTimeout = 300
 	}
 
-	debug := true
-	if value := os.Getenv("DEBUG"); value != "" {
-		parsed, err := strconv.ParseBool(value)
-		if err == nil {
-			debug = parsed
-		}
-	}
+	// debug := true
+	// if value := os.Getenv("DEBUG"); value != "" {
+	// 	parsed, err := strconv.ParseBool(value)
+	// 	if err == nil {
+	// 		debug = parsed
+	// 	}
+	// }
 
 	logLevel := strings.ToUpper(os.Getenv("LOG_LEVEL"))
 
@@ -70,7 +70,7 @@ func Load() (Config, error) {
 		BotToken:       token,
 		PollTimeout:    pollTimeout,
 		CaptchaTimeout: captchaTimeout,
-		Debug:          debug,
-		LogLevel:       logLevel,
+		// Debug:          debug,
+		LogLevel: logLevel,
 	}, nil
 }

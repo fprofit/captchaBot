@@ -6,7 +6,7 @@ import (
 )
 
 func (h *Handler) StartCaptchaTimer(ctx context.Context) {
-	h.logger.Infof("CAPTCHA timer started")
+	h.logger.Info("CAPTCHA timer started")
 
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
@@ -17,7 +17,11 @@ func (h *Handler) StartCaptchaTimer(ctx context.Context) {
 			h.checkCaptchaTimeout()
 
 		case <-ctx.Done():
-			h.logger.Infof("CAPTCHA timer stopped")
+			h.logger.Info(
+				"CAPTCHA timer stopped",
+				"reason", ctx.Err(),
+			)
+
 			return
 		}
 	}
@@ -30,27 +34,53 @@ func (h *Handler) checkCaptchaTimeout() {
 		return
 	}
 
-	h.logger.Infof("expired CAPTCHA challenges found: count=%d", len(expired))
+	h.logger.Info(
+		"expired CAPTCHA challenges found",
+		"count", len(expired),
+	)
 
 	for key, challenge := range expired {
-		h.logger.Infof("processing expired CAPTCHA: chat_id=%d user_id=%d message_id=%d",
-			key.ChatID, challenge.UserID, key.MessageID)
+		h.logger.Debug(
+			"processing expired CAPTCHA",
+			"chat_id", key.ChatID,
+			"user_id", challenge.UserID,
+			"message_id", key.MessageID,
+		)
 
 		if err := h.client.DeleteMessage(key.ChatID, key.MessageID); err != nil {
-			h.logger.Errorf("failed to delete expired CAPTCHA: chat_id=%d message_id=%d error=%v",
-				key.ChatID, key.MessageID, err)
+			h.logger.Error(
+				"failed to delete expired CAPTCHA message",
+				"err", err,
+				"chat_id", key.ChatID,
+				"message_id", key.MessageID,
+			)
 		} else {
-			h.logger.Infof("expired CAPTCHA message deleted: chat_id=%d message_id=%d",
-				key.ChatID, key.MessageID)
+			h.logger.Debug(
+				"expired CAPTCHA message deleted",
+				"chat_id", key.ChatID,
+				"message_id", key.MessageID,
+			)
 		}
 
-		if err := h.client.RemoveChatMember(key.ChatID, challenge.UserID); err != nil {
-			h.logger.Errorf("failed to kick user after CAPTCHA timeout: chat_id=%d user_id=%d error=%v",
-				key.ChatID, challenge.UserID, err)
+		if err := h.client.RemoveChatMember(
+			key.ChatID,
+			challenge.UserID,
+		); err != nil {
+			h.logger.Error(
+				"failed to remove user after CAPTCHA timeout",
+				"err", err,
+				"chat_id", key.ChatID,
+				"user_id", challenge.UserID,
+			)
+
 			continue
 		}
 
-		h.logger.Infof("user kicked because CAPTCHA expired: chat_id=%d user_id=%d message_id=%d",
-			key.ChatID, challenge.UserID, key.MessageID)
+		h.logger.Info(
+			"user removed because CAPTCHA expired",
+			"chat_id", key.ChatID,
+			"user_id", challenge.UserID,
+			"message_id", key.MessageID,
+		)
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"time"
 )
 
 func (c *Client) GetUpdates(ctx context.Context, offset int) ([]Update, error) {
@@ -20,38 +21,61 @@ func (c *Client) GetUpdates(ctx context.Context, offset int) ([]Update, error) {
 		params.Encode(),
 	)
 
-	c.logger.Debugf(
-		"Telegram API request: getUpdates offset=%d timeout=%d",
-		offset,
-		c.pollTimeout,
+	c.logger.Debug(
+		"Telegram API request",
+		"method", http.MethodGet,
+		"endpoint", "getUpdates",
+		"offset", offset,
+		"timeout", c.pollTimeout,
 	)
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
+	req, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodGet,
+		apiURL,
+		nil,
+	)
 	if err != nil {
+		c.logger.Error(
+			"failed to create getUpdates request",
+			"err", err,
+			"offset", offset,
+		)
+
 		return nil, fmt.Errorf("create getUpdates request: %w", err)
 	}
 
+	start := time.Now()
+
 	resp, err := c.client.Do(req)
 	if err != nil {
-		c.logger.Errorf(
-			"getUpdates request failed: %v",
-			err,
+		c.logger.Error(
+			"getUpdates request failed",
+			"err", err,
+			"offset", offset,
+			"duration", time.Since(start),
 		)
 
-		return nil, fmt.Errorf(
-			"getUpdates request: %w",
-			err,
-		)
+		return nil, fmt.Errorf("getUpdates request: %w", err)
 	}
 
 	defer resp.Body.Close()
 
+	c.logger.Debug(
+		"Telegram API response received",
+		"endpoint", "getUpdates",
+		"status", resp.StatusCode,
+		"duration", time.Since(start),
+	)
+
 	var result apiResponse
 
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		c.logger.Errorf(
-			"decode getUpdates response failed: %v",
-			err,
+		c.logger.Error(
+			"failed to decode getUpdates response",
+			"err", err,
+			"status", resp.StatusCode,
+			"duration", time.Since(start),
 		)
 
 		return nil, fmt.Errorf(
@@ -61,10 +85,12 @@ func (c *Client) GetUpdates(ctx context.Context, offset int) ([]Update, error) {
 	}
 
 	if !result.OK {
-		c.logger.Errorf(
-			"Telegram API error: %d %s",
-			result.ErrorCode,
-			result.Description,
+		c.logger.Error(
+			"Telegram API returned an error",
+			"error_code", result.ErrorCode,
+			"description", result.Description,
+			"offset", offset,
+			"duration", time.Since(start),
 		)
 
 		return nil, fmt.Errorf(
@@ -77,9 +103,10 @@ func (c *Client) GetUpdates(ctx context.Context, offset int) ([]Update, error) {
 	var updates []Update
 
 	if err := json.Unmarshal(result.Result, &updates); err != nil {
-		c.logger.Errorf(
-			"decode getUpdates result failed: %v",
-			err,
+		c.logger.Error(
+			"failed to decode getUpdates result",
+			"err", err,
+			"duration", time.Since(start),
 		)
 
 		return nil, fmt.Errorf(
@@ -88,9 +115,11 @@ func (c *Client) GetUpdates(ctx context.Context, offset int) ([]Update, error) {
 		)
 	}
 
-	c.logger.Debugf(
-		"Telegram API response: received %d updates",
-		len(updates),
+	c.logger.Debug(
+		"Telegram API getUpdates completed",
+		"updates", len(updates),
+		"next_offset", nextOffset(offset, updates),
+		"duration", time.Since(start),
 	)
 
 	return updates, nil
@@ -98,23 +127,87 @@ func (c *Client) GetUpdates(ctx context.Context, offset int) ([]Update, error) {
 
 func (c *Client) Poll(ctx context.Context, handler func(Update)) error {
 	offset := 0
+
 	c.logger.Info("Telegram long polling started")
+
 	for {
 		select {
 		case <-ctx.Done():
-			c.logger.Info("Telegram long polling stopped")
+			c.logger.Info(
+				"Telegram long polling stopped",
+				"reason", ctx.Err(),
+			)
+
 			return ctx.Err()
+
 		default:
 		}
+
 		updates, err := c.GetUpdates(ctx, offset)
 		if err != nil {
-			c.logger.Errorf("getUpdates failed: %v", err)
+			if ctx.Err() != nil {
+				c.logger.Debug(
+					"getUpdates interrupted by context",
+					"err", ctx.Err(),
+				)
+
+				return ctx.Err()
+			}
+
+			c.logger.Error(
+				"getUpdates failed",
+				"err", err,
+				"offset", offset,
+			)
+
+			// Не крутим цикл слишком быстро при постоянной ошибке.
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(time.Second):
+			}
+
 			continue
 		}
+
+		if len(updates) == 0 {
+			c.logger.Debug(
+				"no Telegram updates received",
+				"offset", offset,
+			)
+
+			continue
+		}
+
+		c.logger.Debug(
+			"Telegram updates received",
+			"count", len(updates),
+			"offset", offset,
+		)
+
 		for _, update := range updates {
-			c.logger.Debugf("processing update: update_id=%d", update.UpdateID)
+			c.logger.Debug(
+				"processing Telegram update",
+				"update_id", update.UpdateID,
+			)
+
 			handler(update)
+
 			offset = update.UpdateID + 1
+
+			c.logger.Debug(
+				"Telegram update processed",
+				"update_id", update.UpdateID,
+				"next_offset", offset,
+			)
 		}
 	}
+}
+
+func nextOffset(offset int, updates []Update) int {
+	if len(updates) == 0 {
+		return offset
+	}
+
+	return updates[len(updates)-1].UpdateID + 1
 }
