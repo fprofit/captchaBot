@@ -44,14 +44,21 @@ func (m *Manager) Put(key ChallengeKey, userID int64, c Captcha) {
 		timeoutFunc := func() {
 			m.mu.Lock()
 			ch, exists := m.challenges[key]
-			if exists {
-				delete(m.challenges, key)
+			if !exists {
 				m.mu.Unlock()
-				m.logger.Debug("timeoutFunc", "chat_id", key.ChatID)
-				m.expiredChan <- ExpiredChallenge{Key: key, UserID: ch.UserID}
 				return
 			}
+			delete(m.challenges, key)
 			m.mu.Unlock()
+			m.logger.Debug("timeoutFunc", "chat_id", key.ChatID)
+
+			select {
+			case m.expiredChan <- ExpiredChallenge{Key: key, UserID: ch.UserID}:
+				m.logger.Debug("timeout signal successfully sent to handler channel", "chat_id", key.ChatID)
+			default:
+				m.logger.Warn("captcha expired channel is full, timeout signal dropped", "chat_id", key.ChatID)
+
+			}
 		}
 
 		timer := time.AfterFunc(m.timeout, timeoutFunc)
