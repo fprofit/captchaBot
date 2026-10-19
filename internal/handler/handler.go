@@ -34,22 +34,32 @@ func (h *Handler) Handle(update telegram.Update) {
 		return
 	}
 
-	if update.Message == nil {
-		h.logger.Debug("ignoring update without message or callback query", "update_id", update.UpdateID)
+	if update.ChatMember != nil {
+		cm := update.ChatMember
+
+		isJoining := cm.NewChatMember.Status == "member" &&
+			(cm.OldChatMember.Status == "left" || cm.OldChatMember.Status == "kicked")
+
+		if isJoining {
+			h.logger.Info("new user joined the chat, triggering CAPTCHA",
+				"chat_id", cm.Chat.ID,
+				"user_id", cm.NewChatMember.User.ID,
+			)
+			h.sendCaptchaNewUser(cm.Chat, cm.NewChatMember.User)
+		}
 		return
 	}
 
-	if len(update.Message.NewChatMembers) > 0 {
-		h.logger.Debug("update contains new chat members", "update_id", update.UpdateID, "chat_id", update.Message.Chat.ID, "members", len(update.Message.NewChatMembers))
-		h.handleNewChatMembers(update.Message)
+	if update.Message != nil {
+		if len(update.Message.NewChatMembers) > 0 || update.Message.LeftChatMember != nil {
+			h.logger.Info("deleting service message", "chat_id", update.Message.Chat.ID, "message_id", update.Message.MessageID)
+			if err := h.client.DeleteMessage(update.Message.Chat.ID, update.Message.MessageID); err != nil {
+				h.logger.Error("failed to delete service message", "err", err, "chat_id", update.Message.Chat.ID, "message_id", update.Message.MessageID)
+			}
+			return
+		}
+
+		h.logger.Debug("ignoring standard message layout", "message_id", update.Message.MessageID)
 		return
 	}
-
-	if update.Message.LeftChatMember != nil {
-		h.logger.Debug("update contains left chat member", "update_id", update.UpdateID, "chat_id", update.Message.Chat.ID, "user_id", update.Message.LeftChatMember.ID)
-		h.handleLeftChatMember(update.Message)
-		return
-	}
-
-	h.logger.Debug("ignoring unsupported Telegram update", "update_id", update.UpdateID, "chat_id", update.Message.Chat.ID)
 }

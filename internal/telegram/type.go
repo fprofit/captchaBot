@@ -18,9 +18,10 @@ type User struct {
 }
 
 type Update struct {
-	UpdateID      int            `json:"update_id"`
-	Message       *Message       `json:"message,omitempty"`
-	CallbackQuery *CallbackQuery `json:"callback_query,omitempty"`
+	UpdateID      int                `json:"update_id"`
+	Message       *Message           `json:"message,omitempty"`
+	CallbackQuery *CallbackQuery     `json:"callback_query,omitempty"`
+	ChatMember    *ChatMemberUpdated `json:"chat_member,omitempty"`
 }
 
 type Message struct {
@@ -69,4 +70,15 @@ type ChatPermissions struct {
 	CanPinMessages        bool `json:"can_pin_messages"`
 	CanManageTopics       bool `json:"can_manage_topics"`
 	CanReactToMessages    bool `json:"can_react_to_messages"`
+}
+
+type ChatMemberUpdated struct {
+	Chat          Chat       `json:"chat"`
+	From          User       `json:"from"`
+	OldChatMember ChatMember `json:"old_chat_member"`
+	NewChatMember ChatMember `json:"new_chat_member"`
+}
+type ChatMember struct {
+	Status string `json:"status"`
+	User   User   `json:"user"`
 }

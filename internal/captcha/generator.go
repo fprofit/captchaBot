@@ -1,145 +1,114 @@
 package captcha
 
 import (
-	cryptorand "crypto/rand"
-	"encoding/hex"
+	_ "embed"
 	"fmt"
 	"image"
-	mathrand "math/rand"
+	"math/rand"
+	"strconv"
 
 	"github.com/fogleman/gg"
+	"golang.org/x/image/font"
+	"golang.org/x/image/font/opentype"
 )
+
+//go:embed DejaVuSans-Bold.ttf
+var fontBytes []byte
 
 const (
-	Width       = 200
-	Height      = 60
-	FontSize    = 20
-	MinNumber   = 4
-	MaxNumber   = 38
+	Width    = 200
+	Height   = 60
+	FontSize = 20
+
 	NoiseLines  = 15
 	NoisePoints = 50
-
-	MinAnswer = 8
-	MaxAnswer = 76
 )
 
-type GeneratedChallenge struct {
-	Correct string
-	Options []Option
-	Image   image.Image
+type Captcha struct {
+	Options       []Option
+	Image         image.Image
+	correctAnswer string
 }
 
-type Generator struct{}
-
-func NewGenerator() *Generator {
-	return &Generator{}
-}
-
-func (g *Generator) Generate(count int) (GeneratedChallenge, error) {
-	if count < 1 || count > MaxAnswer-MinAnswer+1 {
-		return GeneratedChallenge{}, fmt.Errorf(
-			"invalid CAPTCHA option count: %d",
-			count,
-		)
-	}
-
-	challenge, err := generateImage()
+func GenerateCaptcha() (Captcha, error) {
+	a := rand.Intn(MaxNumber-MinNumber+1) + MinNumber
+	b := rand.Intn(MaxNumber-MinNumber+1) + MinNumber
+	img, err := generateImg(a, b, "+")
 	if err != nil {
-		return GeneratedChallenge{}, fmt.Errorf(
-			"generate CAPTCHA image: %w",
-			err,
-		)
+		return Captcha{}, fmt.Errorf("generate CAPTCHA image: %w", err)
 	}
+	correctAnswer := a + b
 
-	correctIndex := mathrand.Intn(count)
+	options := make([]Option, CountAnswer)
+	usedAnswers := map[int]bool{correctAnswer: true}
+	correctIndex := rand.Intn(CountAnswer)
 
-	used := map[int]bool{
-		challenge.correct: true,
-	}
+	for i := 0; i < CountAnswer; i++ {
+		var answer int
 
-	options := make([]Option, count)
-
-	for i := 0; i < count; i++ {
-		answer := challenge.correct
-
-		if i != correctIndex {
+		if i == correctIndex {
+			answer = correctAnswer
+		} else {
 			for {
-				answer = mathrand.Intn(MaxAnswer-MinAnswer+1) + MinAnswer
-
-				if !used[answer] {
-					used[answer] = true
+				answer = rand.Intn(MaxNumber*2-MinNumber*2+1) + MinNumber*2
+				if !usedAnswers[answer] {
+					usedAnswers[answer] = true
 					break
 				}
 			}
 		}
 
-		token, err := randomToken()
-		if err != nil {
-			return GeneratedChallenge{}, fmt.Errorf(
-				"generate CAPTCHA token: %w",
-				err,
-			)
-		}
+		baseRandom := rand.Uint64()
+		maskedRandom := baseRandom ^ uint64(answer)
+		token := fmt.Sprintf("%x", maskedRandom)
 
 		options[i] = Option{
-			Text:  fmt.Sprintf("%d", answer),
+			Text:  strconv.Itoa(answer),
 			Token: token,
 		}
 	}
 
-	return GeneratedChallenge{
-		Correct: options[correctIndex].Token,
-		Options: options,
-		Image:   challenge.Image,
+	return Captcha{
+		Options:       options,
+		Image:         img,
+		correctAnswer: options[correctIndex].Token,
 	}, nil
 }
 
-type generatedImage struct {
-	correct int
-	Image   image.Image
-}
-
-func generateImage() (generatedImage, error) {
-	a := mathrand.Intn(MaxNumber-MinNumber+1) + MinNumber
-	b := mathrand.Intn(MaxNumber-MinNumber+1) + MinNumber
-
+func generateImg(a, b int, expression string) (image.Image, error) {
 	dc := gg.NewContext(Width, Height)
 
 	dc.SetRGB(0.042, 0.042, 0.042)
 	dc.Clear()
 
-	if err := dc.LoadFontFace("DejaVuSans-Bold.ttf", FontSize); err != nil {
-		return generatedImage{}, fmt.Errorf(
-			"load CAPTCHA font: %w",
-			err,
-		)
+	ttFont, err := opentype.Parse(fontBytes)
+	if err != nil {
+		return nil, fmt.Errorf("parse embedded font: %w", err)
 	}
 
-	drawExpression(dc, a, b)
+	face, err := opentype.NewFace(ttFont, &opentype.FaceOptions{
+		Size:    FontSize,
+		DPI:     72,
+		Hinting: font.HintingFull,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("create font face: %w", err)
+	}
+
+	dc.SetFontFace(face)
+
+	drawExpression(dc, a, b, expression)
 	drawNoise(dc)
 
-	return generatedImage{
-		correct: a + b,
-		Image:   dc.Image(),
-	}, nil
+	return dc.Image(), nil
 }
 
-func randomToken() (string, error) {
-	var data [16]byte
-
-	if _, err := cryptorand.Read(data[:]); err != nil {
-		return "", err
-	}
-
-	return hex.EncodeToString(data[:]), nil
-}
-
-func drawExpression(dc *gg.Context, a, b int) {
+func drawExpression(dc *gg.Context, a, b int, e string) {
 	centerX := float64(Width) / 2
 	centerY := float64(Height) / 2
 
 	drawNumber(dc, fmt.Sprint(a), false, centerY)
-	drawChar(dc, "+", centerX, centerY, 0)
+	drawChar(dc, e, centerX, centerY, 0)
 	drawNumber(dc, fmt.Sprint(b), true, centerY)
 }
 
@@ -147,52 +116,18 @@ func drawNumber(dc *gg.Context, number string, rightSide bool, y float64) {
 	digits := []rune(number)
 
 	if len(digits) == 1 {
-		drawChar(
-			dc,
-			string(digits[0]),
-			randomX(rightSide),
-			randomY(y),
-			randomAngle(),
-		)
-
+		drawChar(dc, string(digits[0]), randomX(rightSide), randomY(y), randomAngle())
 		return
 	}
 
 	if rightSide {
-		drawChar(
-			dc,
-			string(digits[0]),
-			randomRange(118, 125),
-			randomY(y),
-			randomAngle(),
-		)
-
-		drawChar(
-			dc,
-			string(digits[1]),
-			randomRange(150, 175),
-			randomY(y),
-			randomAngle(),
-		)
-
+		drawChar(dc, string(digits[0]), randomRange(118, 125), randomY(y), randomAngle())
+		drawChar(dc, string(digits[1]), randomRange(150, 175), randomY(y), randomAngle())
 		return
 	}
 
-	drawChar(
-		dc,
-		string(digits[0]),
-		randomRange(25, 50),
-		randomY(y),
-		randomAngle(),
-	)
-
-	drawChar(
-		dc,
-		string(digits[1]),
-		randomRange(75, 82),
-		randomY(y),
-		randomAngle(),
-	)
+	drawChar(dc, string(digits[0]), randomRange(25, 50), randomY(y), randomAngle())
+	drawChar(dc, string(digits[1]), randomRange(75, 82), randomY(y), randomAngle())
 }
 
 func drawChar(dc *gg.Context, text string, x, y, angle float64) {
@@ -215,12 +150,7 @@ func drawNoise(dc *gg.Context) {
 	for i := 0; i < NoiseLines; i++ {
 		dc.SetLineWidth(2)
 
-		dc.DrawLine(
-			randomRange(0, Width),
-			randomRange(0, Height),
-			randomRange(0, Width),
-			randomRange(0, Height),
-		)
+		dc.DrawLine(randomRange(0, Width), randomRange(0, Height), randomRange(0, Width), randomRange(0, Height))
 
 		dc.Stroke()
 	}
@@ -229,20 +159,16 @@ func drawNoise(dc *gg.Context) {
 	dc.SetRGBA(red, green, blue, 0.70)
 
 	for i := 0; i < NoisePoints; i++ {
-		dc.DrawPoint(
-			randomRange(0, Width),
-			randomRange(0, Height),
-			randomRange(1, 3),
-		)
+		dc.DrawPoint(randomRange(0, Width), randomRange(0, Height), randomRange(1, 3))
 
 		dc.Fill()
 	}
 }
 
 func randomTextColor() (float64, float64, float64) {
-	red := mathrand.Intn(110) + 110
-	green := mathrand.Intn(110) + 110
-	blue := mathrand.Intn(110) + 110
+	red := rand.Intn(110) + 110
+	green := rand.Intn(110) + 110
+	blue := rand.Intn(110) + 110
 
 	return float64(red) / 255,
 		float64(green) / 255,
@@ -265,5 +191,5 @@ func randomAngle() float64 {
 }
 
 func randomRange(min, max float64) float64 {
-	return min + mathrand.Float64()*(max-min)
+	return min + rand.Float64()*(max-min)
 }

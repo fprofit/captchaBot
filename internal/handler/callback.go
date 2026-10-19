@@ -34,6 +34,10 @@ func (h *Handler) handleCallback(callback *telegram.CallbackQuery) {
 	case 1:
 		text = CaptchaPassedMessage
 		h.notification(callback.From, callback.Message.Chat, "✅ Пользователь прошёл CAPTCHA")
+		h.captcha.Delete(captcha.ChallengeKey{
+			ChatID:    chatID,
+			MessageID: messageID,
+		})
 
 		showAlert = true
 		h.logger.Info("CAPTCHA passed", "user_id", userID, "chat_id", chatID, "message_id", messageID)
@@ -87,18 +91,6 @@ func (h *Handler) deleteCaptchaMessage(chatID, messageID int64) {
 	}
 
 	h.logger.Debug("CAPTCHA message deleted", "chat_id", chatID, "message_id", messageID)
-}
-
-func (h *Handler) retryCaptcha(chatID, messageID int64, user telegram.User) {
-	g, k := h.generateCaptcha()
-	sentMessage, err := h.client.EditCaptchaMessageImg(chatID, messageID, formatCaptchaCaption(user), g.Image, k)
-	if err != nil {
-		h.logger.Error("failed to update CAPTCHA message", "err", err, "user_id", user.ID, "chat_id", chatID, "message_id", messageID)
-		return
-	}
-
-	h.captcha.Update(captcha.ChallengeKey{ChatID: chatID, MessageID: sentMessage.MessageID}, g)
-	h.logger.Debug("new CAPTCHA challenge created", "user_id", user.ID, "chat_id", chatID, "message_id", sentMessage.MessageID)
 }
 
 func (h *Handler) removeChatMember(chatID, messageID, userID int64) {

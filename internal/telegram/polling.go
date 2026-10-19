@@ -14,6 +14,7 @@ func (c *Client) GetUpdates(ctx context.Context, offset int) ([]Update, error) {
 	params := url.Values{}
 	params.Set("offset", strconv.Itoa(offset))
 	params.Set("timeout", strconv.Itoa(c.pollTimeout))
+	params.Set("allowed_updates", `["message","callback_query","chat_member"]`)
 
 	apiURL := fmt.Sprintf(
 		"https://api.telegram.org/bot%s/getUpdates?%s",

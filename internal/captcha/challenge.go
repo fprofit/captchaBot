@@ -1,6 +1,8 @@
 package captcha
 
-import "time"
+import (
+	"time"
+)
 
 type ChallengeKey struct {
 	ChatID    int64
@@ -8,17 +10,10 @@ type ChallengeKey struct {
 }
 
 type Challenge struct {
-	UserID    int64
-	ExpiresAt time.Time
-	Attempts  int
-	Options   []Option
-
-	correct string
-}
-
-type Option struct {
-	Text  string
-	Token string
+	UserID   int64
+	timer    *time.Timer
+	attempts int
+	correct  string
 }
 
 type CheckResult int
@@ -33,6 +28,11 @@ const (
 )
 
 const (
+	CountAnswer = 4
+
 	MaxAttempts     = 2
 	KickMaxAttempts = 5
+
+	MinNumber = 4
+	MaxNumber = 38
 )
