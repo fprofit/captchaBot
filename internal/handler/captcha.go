@@ -1,5 +1,3 @@
-// internal/handler/captcha.go
-
 package handler
 
 import (
